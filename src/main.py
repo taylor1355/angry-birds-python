@@ -19,22 +19,21 @@ def load_music():
 
 def main():
     pygame.init()
-    #load_music()
+    load_music()
     
     mouse_pressed = False
-    x_mouse = 0
-    y_mouse = 0
     
     game = Game()
     
-    running = True
-    while running:
+    while True:
+        x_mouse, y_mouse = pygame.mouse.get_pos()
+        
         # Input handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                return
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
+                return
             #elif event.type == pygame.KEYDOWN and event.key == pygame.K_w:
             #    # Toggle wall
             #    if wall:
@@ -104,7 +103,6 @@ def main():
                         game.score = 0
                         
         game.step()
-        x_mouse, y_mouse = pygame.mouse.get_pos()
         
         
 if __name__ == "__main__":
