@@ -401,7 +401,4 @@ class Game:
         for pig in pigs_to_remove:
             space.remove(pig.shape, pig.shape.body)
             self.pigs.remove(pig)
-            
-            
-class GameGraphics:
     
