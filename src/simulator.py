@@ -11,7 +11,7 @@ class Simulator:
     
     
     def simulate_level(self, shots):
-        game = Game(limit_framerate=False, render=False, level_num=self.level_num)
+        game = Game(limit_framerate=True, render=True, level_num=self.level_num)
         
         if len(shots) != game.level.number_of_birds:
             return None
@@ -32,7 +32,7 @@ class Simulator:
         while not self.simulation_over(game, frame_num):
             game.step()
             frame_num += 1
-                    
+        
         return game.score
         
         

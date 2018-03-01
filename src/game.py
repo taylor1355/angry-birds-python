@@ -20,7 +20,7 @@ bold_font3 = pygame.font.SysFont("arial", 50, bold=True)
 DEFAULT_FRAMERATE = 50
 
 class Game:
-    def __init__(self, limit_framerate=True, render=True, level_num=0):
+    def __init__(self, limit_framerate=True, render=True, level_num=11):
         self.graphics = GameGraphics(self, render)
         
         self.framerate = DEFAULT_FRAMERATE
@@ -119,9 +119,19 @@ class Game:
         dt = 1 / DEFAULT_FRAMERATE / steps
         for step in range(steps):
             self.space.step(dt) # multiple updates per frame for better stability
+        
+        # Check terminal conditions
+        if self.level.number_of_birds >= 0 and len(self.pigs) == 0:
+            if self.bonus_score_once:
+                self.score += (self.level.number_of_birds-1) * 10000
+            self.bonus_score_once = False
+            self.game_state = GameState.WON
+        if self.level.number_of_birds <= 0 and self.frames_since(self.no_birds_frame) > 300 and len(self.pigs) > 0:
+            self.game_state = GameState.LOST
             
         self.graphics.update()
         
+        # Frame logic
         self.frame_number += 1
         if self.limit_framerate:
             self.clock.tick(self.framerate)
@@ -410,9 +420,12 @@ class GameGraphics:
         if self.game.game_state == GameState.PAUSED:
             self.screen.blit(self.play_button, (500, 200))
             self.screen.blit(self.replay_button, (500, 300))
+        
+        if self.game.game_state == GameState.WON:
+            self.draw_level_cleared()
+        elif self.game.game_state == GameState.LOST:
+            self.draw_level_failed()
             
-        self.draw_level_cleared()
-        self.draw_level_failed()
         pygame.display.flip()
             
     
@@ -421,19 +434,15 @@ class GameGraphics:
         if not self.render:
             return
         
-        if self.game.level.number_of_birds >= 0 and len(self.game.pigs) == 0:
+        if self.game.game_state == GameState.WON:
             level_cleared = bold_font3.render("Level Cleared!", 1, WHITE)
             score_level_cleared = bold_font2.render(str(self.game.score), 1, WHITE)
-            if self.game.bonus_score_once:
-                self.game.score += (self.game.level.number_of_birds-1) * 10000
-            self.game.bonus_score_once = False
-            self.game.game_state = GameState.WON
             rect = pygame.Rect(300, 0, 600, 800)
             pygame.draw.rect(self.screen, BLACK, rect)
             self.screen.blit(level_cleared, (450, 90))
-            if self.game.score >= self.game.level.one_star and self.game.score <= self.game.level.two_star:
+            if self.game.score >= self.game.level.one_star and self.game.score < self.game.level.two_star:
                 self.screen.blit(self.star1, (310, 190))
-            if self.game.score >= self.game.level.two_star and self.game.score <= self.game.level.three_star:
+            if self.game.score >= self.game.level.two_star and self.game.score < self.game.level.three_star:
                 self.screen.blit(self.star1, (310, 190))
                 self.screen.blit(self.star2, (500, 170))
             if self.game.score >= self.game.level.three_star:
@@ -450,9 +459,8 @@ class GameGraphics:
         if not self.render:
             return
             
-        if self.game.level.number_of_birds <= 0 and self.game.frames_since(self.game.no_birds_frame) > 300 and len(self.game.pigs) > 0:
+        if self.game.game_state == GameState.LOST:
             failed = bold_font3.render("Level Failed", 1, WHITE)
-            self.game.game_state = GameState.LOST
             rect = pygame.Rect(300, 0, 600, 800)
             pygame.draw.rect(self.screen, BLACK, rect)
             self.screen.blit(failed, (450, 90))
