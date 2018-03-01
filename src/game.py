@@ -4,6 +4,7 @@ import time
 from utils import *
 from level import Level
 from characters import Bird
+from enum import Enum
 
 pygame.init()
 
@@ -19,11 +20,16 @@ bold_font3 = pygame.font.SysFont("arial", 50, bold=True)
 DEFAULT_FRAMERATE = 50
 
 class Game:
-    def __init__(self, framerate=DEFAULT_FRAMERATE):
-        self.graphics = GameGraphics(self)
+    def __init__(self, limit_framerate=True, render=True, level_num=0):
+        self.graphics = GameGraphics(self, render)
         
-        self.framerate = framerate
+        self.framerate = DEFAULT_FRAMERATE
+        self.limit_framerate = limit_framerate
+        self.frame_number = 0
+        self.sling_released_frame = 0
+        self.no_birds_frame = 0
         self.clock = pygame.time.Clock()
+        self.start_time = time.time()
         
         # the base of the physics
         self.space = pm.Space()
@@ -38,9 +44,6 @@ class Game:
         self.ball_number = 0
         self.polys_dict = {}
         self.angle = 0
-        self.count = 0
-        self.t1 = 0
-        self.t2 = 0
         
         self.rope_length = 90
         self.pull_distance = 0
@@ -51,10 +54,8 @@ class Game:
         self.sling_rope_pos = None
         
         self.score = 0
-        self.game_state = 0
+        self.game_state = GameState.ONGOING
         self.bird_path = []
-        self.counter = 0
-        self.restart_counter = False
         self.bonus_score_once = True
         self.wall = False
 
@@ -80,7 +81,7 @@ class Game:
         self.space.add_collision_handler(1, 2).post_solve=self.post_solve_pig_wood
         
         self.level = Level(self.pigs, self.columns, self.beams, self.space)
-        self.level.number = 0
+        self.level.number = level_num
         self.level.load_level()
         
         
@@ -90,19 +91,14 @@ class Game:
         
         birds_to_remove = []
         pigs_to_remove = []
-        self.counter += 1
         
         # Flag birds for removal
         for bird in self.birds:
             if bird.shape.body.position.y < 0:
-                birds_to_remove.append(bird)
-            if self.counter >= 3 and time.time() - self.t1 < self.framerate_adjusted(5):
+                birds_to_remove.append(bird) 
+            if self.frames_since(self.sling_released_frame) % 5 == 0:
                 bird_pos = to_pygame(bird.shape.body.position)
                 self.bird_path.append(bird_pos)
-                self.restart_counter = True
-        if self.restart_counter:
-            self.counter = 0
-            self.restart_counter = False
             
         # Remove birds and pigs
         for bird in birds_to_remove:
@@ -119,14 +115,20 @@ class Game:
                 pigs_to_remove.append(pig)
             
         # Update physics
-        dt = 1/DEFAULT_FRAMERATE/2
-        for x in range(2):
-            self.space.step(dt) # make two updates per frame for better stability
+        steps = 2
+        dt = 1 / DEFAULT_FRAMERATE / steps
+        for step in range(steps):
+            self.space.step(dt) # multiple updates per frame for better stability
             
         self.graphics.update()
         
-        self.clock.tick(self.framerate)
-        pygame.display.set_caption("fps: " + str(self.clock.get_fps()))
+        self.frame_number += 1
+        if self.limit_framerate:
+            self.clock.tick(self.framerate)
+            pygame.display.set_caption("fps: " + str(self.clock.get_fps()))
+        else:
+            self.framerate = self.frame_number / (time.time() - self.start_time)
+            pygame.display.set_caption("fps: " + str(self.framerate))    
         
         
     def set_sling_target(self, x, y):
@@ -138,7 +140,7 @@ class Game:
         if self.level.number_of_birds > 0:
             self.sling_bird_pos = None
             self.level.number_of_birds -= 1
-            self.t1 = time.time()*1000
+            self.sling_released_frame = self.frame_number
             xo = 154
             yo = 156
             self.pull_distance = min(self.pull_distance, self.rope_length)
@@ -149,7 +151,7 @@ class Game:
                 bird = Bird(-self.pull_distance, self.angle, xo, yo, self.space)
                 self.birds.append(bird)
             if self.level.number_of_birds == 0:
-                self.t2 = time.time()
+                self.no_birds_frame = self.frame_number
         
         
     def sling_action(self):
@@ -262,18 +264,31 @@ class Game:
             self.pigs.remove(pig)
     
     
+    def frames_since(self, frame_number):
+        return self.frame_number - frame_number
+    
     def framerate_adjusted(self, time):
         return time *  DEFAULT_FRAMERATE / self.framerate
     
     
     
+class GameState(Enum):
+    ONGOING = 0
+    PAUSED = 1
+    LOST = 2
+    WON = 3
+    
+    
+    
 class GameGraphics:
-    def __init__(self, game, render=True):
+    def __init__(self, game, render=True, debug = False):
         self.screen = pygame.display.set_mode((1200, 650))
         
         self.render = render
         if not self.render:
             return
+            
+        self.debug = debug
             
         self.game = game
         
@@ -339,7 +354,7 @@ class GameGraphics:
             self.screen.blit(self.redbird, self.game.sling_bird_pos)
             pygame.draw.line(self.screen, (0, 0, 0), (self.game.sling_x, self.game.sling_y), self.game.sling_rope_pos, 5)
         else:
-            if time.time()*1000 - self.game.t1 > self.game.framerate_adjusted(300) and self.game.level.number_of_birds > 0:
+            if self.game.frames_since(self.game.sling_released_frame) > 15 and self.game.level.number_of_birds > 0:
                 self.screen.blit(self.redbird, (130, 426))
             else:
                 pygame.draw.line(self.screen, (0, 0, 0), (self.game.sling_x, self.game.sling_y-8), (self.game.sling2_x, self.game.sling2_y-7), 5)
@@ -348,7 +363,8 @@ class GameGraphics:
         for bird in self.game.birds:
             bird_pos = to_pygame(bird.shape.body.position)
             self.screen.blit(self.redbird, (bird_pos[0]-22, bird_pos[1]-20))
-            pygame.draw.circle(self.screen, BLUE, bird_pos, int(bird.shape.radius), 2)
+            if self.debug:
+                pygame.draw.circle(self.screen, BLUE, bird_pos, int(bird.shape.radius), 2)
             
         # Draw static lines
         for line in self.game.static_lines:
@@ -367,7 +383,8 @@ class GameGraphics:
             img = pygame.transform.rotate(self.pig_image, angle_degrees)
             w,h = img.get_size()
             self.screen.blit(img, (pig_pos[0]-w/2, pig_pos[1]-h/2))
-            pygame.draw.circle(self.screen, BLUE, pig_pos, int(pig.radius), 2)
+            if self.debug:
+                pygame.draw.circle(self.screen, BLUE, pig_pos, int(pig.radius), 2)
             
         # Draw columns and Beams
         for column in self.game.columns:
@@ -390,7 +407,7 @@ class GameGraphics:
             
         # Pause option
         self.screen.blit(self.pause_button, (10, 90))
-        if self.game.game_state == 1:
+        if self.game.game_state == GameState.PAUSED:
             self.screen.blit(self.play_button, (500, 200))
             self.screen.blit(self.replay_button, (500, 300))
             
@@ -410,7 +427,7 @@ class GameGraphics:
             if self.game.bonus_score_once:
                 self.game.score += (self.game.level.number_of_birds-1) * 10000
             self.game.bonus_score_once = False
-            self.game.game_state = 4
+            self.game.game_state = GameState.WON
             rect = pygame.Rect(300, 0, 600, 800)
             pygame.draw.rect(self.screen, BLACK, rect)
             self.screen.blit(level_cleared, (450, 90))
@@ -433,9 +450,9 @@ class GameGraphics:
         if not self.render:
             return
             
-        if self.game.level.number_of_birds <= 0 and time.time() - self.game.t2 > self.game.framerate_adjusted(5) and len(self.game.pigs) > 0:
+        if self.game.level.number_of_birds <= 0 and self.game.frames_since(self.game.no_birds_frame) > 300 and len(self.game.pigs) > 0:
             failed = bold_font3.render("Level Failed", 1, WHITE)
-            self.game.game_state = 3
+            self.game.game_state = GameState.LOST
             rect = pygame.Rect(300, 0, 600, 800)
             pygame.draw.rect(self.screen, BLACK, rect)
             self.screen.blit(failed, (450, 90))
